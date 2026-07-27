@@ -1,0 +1,132 @@
+Add a new Schedule & Calendar feature to the Client Log app and push the completed changes to GitHub.
+
+Goal
+
+I want to see all upcoming client appointments in one place.
+
+New Navigation Item
+
+Add a new page called Schedule in the main navigation.
+
+Schedule Page Layout
+
+Upcoming Appointments List
+
+Group appointments by date.
+
+Example:
+
+Today
+
+* Sarah - Hydrafacial - 2:00 PM
+* Maya - Facial - 4:00 PM
+
+Tomorrow
+
+* Rana - Consultation - 11:00 AM
+
+August 5, 2026
+
+* Client A
+* Client B
+* Client C
+
+Appointments should be sorted chronologically.
+
+Calendar View
+
+Add a monthly calendar at the top of the Schedule page.
+
+Calendar Rules
+
+* Days with at least one scheduled appointment should be highlighted.
+* Use a red indicator (red dot, red circle, or red background).
+* Days without appointments should display normally.
+* The current day should be visually distinct.
+* Users can navigate between months.
+
+Calendar Interaction
+
+When a user clicks a date:
+
+* Show all appointments for that date.
+* If there are no appointments, display:
+    “No appointments scheduled.”
+
+Data Source
+
+Use the existing visit records.
+
+Appointments should come from:
+
+* next_appointment_date
+    or the current appointment scheduling field already stored in Supabase.
+
+Do not create duplicate appointment tables unless necessary.
+
+Dashboard Widget
+
+Add a dashboard card showing:
+
+* Today’s Appointments Count
+* Tomorrow’s Appointments Count
+* Upcoming This Week Count
+
+Notifications Badge
+
+Display a badge showing:
+
+* Overdue appointments
+* Appointments scheduled for today
+
+Search & Filters
+
+Add:
+
+* Search by client name
+* Filter by date range
+* Filter by service
+
+Performance
+
+* Fetch only required records.
+* Use efficient Supabase queries.
+* Avoid loading unnecessary visit history data.
+
+Mobile Optimization
+
+The Schedule page must:
+
+* Work perfectly on phones.
+* Be responsive.
+* Support scrolling through long appointment lists.
+
+Error Handling
+
+* Show loading states.
+* Show empty states.
+* Handle missing appointment dates gracefully.
+* Prevent crashes if appointment fields are null.
+
+Testing
+
+Verify:
+
+* Calendar highlights dates correctly.
+* Clicking dates shows correct appointments.
+* Today’s and future appointments display properly.
+* Existing client history functionality remains unchanged.
+* Production build passes without errors.
+
+Deliverables
+
+After implementation:
+
+1. Commit all changes.
+2. Push to GitHub.
+3. Provide a summary including:
+    * Files created
+    * Files modified
+    * Database changes (if any)
+    * New routes added
+    * Any Supabase migrations required
