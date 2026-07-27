@@ -607,8 +607,8 @@ function BottomBar({ children }) {
 
 function Sheet({ title, onClose, children }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#00000055", display: "flex", alignItems: "flex-end", zIndex: 50 }} onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: PAPER, borderRadius: "20px 20px 0 0", padding: "10px 20px calc(20px + env(safe-area-inset-bottom))", width: "100%", maxWidth: 480, margin: "0 auto", maxHeight: "88vh", overflowY: "auto" }}>
+    <div style={{ position: "fixed", inset: 0, background: "#00000055", display: "flex", alignItems: "flex-end", zIndex: 200 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: PAPER, borderRadius: "20px 20px 0 0", padding: "10px 20px calc(32px + env(safe-area-inset-bottom))", width: "100%", maxWidth: 480, margin: "0 auto", maxHeight: "92vh", overflowY: "auto" }}>
         <div style={{ width: 36, height: 4, background: LINE, borderRadius: 4, margin: "4px auto 14px" }} />
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h3 style={{ fontSize: 17, fontWeight: 700, margin: 0, color: INK }}>{title}</h3>
