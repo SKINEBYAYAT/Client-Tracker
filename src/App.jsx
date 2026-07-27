@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { Plus, Search, Calendar, X, Trash2, Phone, ChevronLeft, ChevronRight, LogOut, Pencil } from "lucide-react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { Plus, Search, Calendar, X, Trash2, Phone, ChevronLeft, ChevronRight, LogOut, Pencil, Users } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
 function useFonts() {
@@ -152,6 +152,26 @@ function ClientTracker() {
   const [sheet, setSheet] = useState(null);
   const [editingVisit, setEditingVisit] = useState(null);
   const [error, setError] = useState("");
+  const [activeTab, setActiveTab] = useState("clients");
+
+  // Derive flat appointments list from all visits that have a next_date
+  const appointments = useMemo(() => {
+    const result = [];
+    clients.forEach((client) => {
+      (visitsByClient[client.id] || []).forEach((visit) => {
+        if (visit.nextDate) {
+          result.push({
+            clientId: client.id,
+            clientName: client.name,
+            visitId: visit.id,
+            date: visit.nextDate,
+            services: visit.services || [],
+          });
+        }
+      });
+    });
+    return result.sort((a, b) => a.date.localeCompare(b.date));
+  }, [clients, visitsByClient]);
 
   const loadAll = useCallback(async () => {
     setError("");
@@ -327,60 +347,82 @@ function ClientTracker() {
 
       {error && <div style={{ background: STAMP_BG, color: STAMP, padding: "8px 20px", fontSize: 12.5, fontWeight: 500 }}>{error}</div>}
 
-      {screen === "list" && (
-        <ListScreen
-          clients={filtered}
-          visitsByClient={visitsByClient}
-          query={query}
-          setQuery={setQuery}
-          onOpen={openClient}
-          onNew={() => setSheet("newClient")}
-          loaded={loaded}
-          totalCount={clients.length}
-        />
+      {activeTab === "clients" && (
+        <>
+          {screen === "list" && (
+            <ListScreen
+              clients={filtered}
+              visitsByClient={visitsByClient}
+              query={query}
+              setQuery={setQuery}
+              onOpen={openClient}
+              onNew={() => setSheet("newClient")}
+              loaded={loaded}
+              totalCount={clients.length}
+              appointments={appointments}
+            />
+          )}
+
+          {screen === "detail" && selected && (
+            <DetailScreen
+              client={selected}
+              visits={visitsByClient[selected.id] || []}
+              onBack={() => setScreen("list")}
+              onEdit={() => setSheet("editClient")}
+              onDelete={() => deleteClient(selected.id)}
+              onNewVisit={() => setSheet("newVisit")}
+              onEditVisit={(v) => {
+                setEditingVisit(v);
+                setSheet("editVisit");
+              }}
+              onDeleteVisit={(vid) => deleteVisit(selected.id, vid)}
+            />
+          )}
+
+          {sheet === "newClient" && <NewClientSheet onClose={() => setSheet(null)} onSave={addClient} />}
+          {sheet === "editClient" && selected && (
+            <EditClientSheet client={selected} onClose={() => setSheet(null)} onSave={(data) => updateClient(selected.id, data)} />
+          )}
+          {sheet === "newVisit" && selected && (
+            <NewVisitSheet clientName={selected.name} onClose={() => setSheet(null)} onSave={(v) => addVisit(selected.id, v)} />
+          )}
+          {sheet === "editVisit" && selected && editingVisit && (
+            <EditVisitSheet
+              clientName={selected.name}
+              visit={editingVisit}
+              onClose={() => {
+                setSheet(null);
+                setEditingVisit(null);
+              }}
+              onSave={(v) => updateVisit(selected.id, editingVisit.id, v)}
+            />
+          )}
+        </>
       )}
 
-      {screen === "detail" && selected && (
-        <DetailScreen
-          client={selected}
-          visits={visitsByClient[selected.id] || []}
-          onBack={() => setScreen("list")}
-          onEdit={() => setSheet("editClient")}
-          onDelete={() => deleteClient(selected.id)}
-          onNewVisit={() => setSheet("newVisit")}
-          onEditVisit={(v) => {
-            setEditingVisit(v);
-            setSheet("editVisit");
-          }}
-          onDeleteVisit={(vid) => deleteVisit(selected.id, vid)}
-        />
+      {activeTab === "schedule" && (
+        <ScheduleScreen appointments={appointments} loaded={loaded} />
       )}
 
-      {sheet === "newClient" && <NewClientSheet onClose={() => setSheet(null)} onSave={addClient} />}
-      {sheet === "editClient" && selected && (
-        <EditClientSheet client={selected} onClose={() => setSheet(null)} onSave={(data) => updateClient(selected.id, data)} />
-      )}
-      {sheet === "newVisit" && selected && (
-        <NewVisitSheet clientName={selected.name} onClose={() => setSheet(null)} onSave={(v) => addVisit(selected.id, v)} />
-      )}
-      {sheet === "editVisit" && selected && editingVisit && (
-        <EditVisitSheet
-          clientName={selected.name}
-          visit={editingVisit}
-          onClose={() => {
-            setSheet(null);
-            setEditingVisit(null);
-          }}
-          onSave={(v) => updateVisit(selected.id, editingVisit.id, v)}
-        />
-      )}
+      <TabBar
+        activeTab={activeTab}
+        onSwitch={(tab) => { setActiveTab(tab); }}
+        appointments={appointments}
+      />
     </div>
   );
 }
 
 // ---------------- LIST SCREEN ----------------
-function ListScreen({ clients, visitsByClient, query, setQuery, onOpen, onNew, loaded, totalCount }) {
+function ListScreen({ clients, visitsByClient, query, setQuery, onOpen, onNew, loaded, totalCount, appointments }) {
   const signOut = () => supabase.auth.signOut();
+  const today = todayStr();
+  const tmrw = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
+  const weekEnd = (() => { const d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); })();
+  const todayCount = appointments.filter((a) => a.date === today).length;
+  const tmrwCount = appointments.filter((a) => a.date === tmrw).length;
+  const weekCount = appointments.filter((a) => a.date > today && a.date <= weekEnd).length;
+
   return (
     <>
       <div style={{ padding: "20px 20px 12px", borderBottom: `1px solid ${LINE}` }}>
@@ -392,7 +434,21 @@ function ListScreen({ clients, visitsByClient, query, setQuery, onOpen, onNew, l
             <LogOut size={13} /> Sign out
           </button>
         </div>
-        <h1 style={{ fontSize: 26, fontWeight: 700, margin: "2px 0 14px", letterSpacing: "-0.02em" }}>Clients</h1>
+        <h1 style={{ fontSize: 26, fontWeight: 700, margin: "2px 0 10px", letterSpacing: "-0.02em" }}>Clients</h1>
+        {loaded && (todayCount > 0 || tmrwCount > 0 || weekCount > 0) && (
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            {[
+              { label: "Today", count: todayCount },
+              { label: "Tomorrow", count: tmrwCount },
+              { label: "This Week", count: weekCount },
+            ].map(({ label, count }) => (
+              <div key={label} style={{ flex: 1, background: count > 0 ? STAMP_BG : PAPER, border: `1px solid ${count > 0 ? "#EDCECA" : LINE}`, borderRadius: 10, padding: "7px 8px", textAlign: "center" }}>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 18, fontWeight: 700, color: count > 0 ? STAMP : MUTED, lineHeight: 1 }}>{count}</div>
+                <div style={{ fontSize: 10, color: MUTED, marginTop: 3, fontWeight: 500, letterSpacing: "0.04em", textTransform: "uppercase" }}>{label}</div>
+              </div>
+            ))}
+          </div>
+        )}
         <div style={{ position: "relative" }}>
           <Search size={16} style={{ position: "absolute", left: 12, top: 12, color: MUTED }} />
           <input
@@ -543,7 +599,7 @@ function VisitTicket({ visit, onEdit, onDelete }) {
 // ---------------- SHARED ----------------
 function BottomBar({ children }) {
   return (
-    <div style={{ position: "sticky", bottom: 0, padding: "12px 16px calc(12px + env(safe-area-inset-bottom))", background: `linear-gradient(${PAPER}00, ${PAPER} 30%)` }}>
+    <div style={{ position: "sticky", bottom: "calc(57px + env(safe-area-inset-bottom))", padding: "12px 16px 12px", background: `linear-gradient(${PAPER}00, ${PAPER} 30%)` }}>
       {children}
     </div>
   );
@@ -712,6 +768,324 @@ function NewVisitSheet({ clientName, onClose, onSave }) {
         {!canSave && <div style={{ fontSize: 12, color: STAMP, textAlign: "center" }}>Add a date and at least one service.</div>}
       </div>
     </Sheet>
+  );
+}
+
+// ---------------- HELPERS ----------------
+function tomorrowStr() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function dateLabel(dateStr) {
+  const today = todayStr();
+  const tmrw = tomorrowStr();
+  if (dateStr === today) return "Today";
+  if (dateStr === tmrw) return "Tomorrow";
+  return fmtDate(dateStr);
+}
+
+// ---------------- TAB BAR ----------------
+function TabBar({ activeTab, onSwitch, appointments }) {
+  const today = todayStr();
+  const overdueCount = appointments.filter((a) => a.date < today).length;
+  const todayCount = appointments.filter((a) => a.date === today).length;
+  const badge = overdueCount + todayCount;
+
+  return (
+    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100, display: "flex", justifyContent: "center" }}>
+      <div style={{ width: "100%", maxWidth: 480, display: "flex", background: CARD, borderTop: `1px solid ${LINE}`, paddingBottom: "env(safe-area-inset-bottom)" }}>
+        {[
+          { id: "clients", label: "Clients", renderIcon: () => <Users size={20} />, badge: 0 },
+          { id: "schedule", label: "Schedule", renderIcon: () => <Calendar size={20} />, badge },
+        ].map(({ id, label, renderIcon, badge: b }) => (
+          <button
+            key={id}
+            onClick={() => onSwitch(id)}
+            className="tap"
+            style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, height: 56, border: "none", background: "transparent", cursor: "pointer", color: activeTab === id ? INK : MUTED, fontSize: 10.5, fontWeight: activeTab === id ? 700 : 400, fontFamily: "'Inter', sans-serif", letterSpacing: "0.03em", position: "relative" }}
+          >
+            <div style={{ position: "relative" }}>
+              {renderIcon()}
+              {b > 0 && (
+                <div style={{ position: "absolute", top: -5, right: -8, background: STAMP, color: "#fff", borderRadius: 999, fontSize: 9, fontWeight: 700, minWidth: 15, height: 15, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px", lineHeight: 1 }}>
+                  {b > 99 ? "99+" : b}
+                </div>
+              )}
+            </div>
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------- SCHEDULE SCREEN ----------------
+function ScheduleScreen({ appointments, loaded }) {
+  const today = todayStr();
+  const initMonth = today.slice(0, 7); // "YYYY-MM"
+  const [calMonth, setCalMonth] = useState(initMonth);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [serviceFilter, setServiceFilter] = useState("");
+
+  // Filtered appointments
+  const filtered = useMemo(() => {
+    let list = appointments;
+    if (selectedDate) list = list.filter((a) => a.date === selectedDate);
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter((a) => a.clientName.toLowerCase().includes(q));
+    }
+    if (serviceFilter.trim()) {
+      const sf = serviceFilter.trim().toLowerCase();
+      list = list.filter((a) => a.services.some((s) => s.toLowerCase().includes(sf)));
+    }
+    return list;
+  }, [appointments, selectedDate, searchQuery, serviceFilter]);
+
+  // Group by date
+  const grouped = useMemo(() => {
+    const map = {};
+    filtered.forEach((a) => {
+      if (!map[a.date]) map[a.date] = [];
+      map[a.date].push(a);
+    });
+    return Object.entries(map).sort(([a], [b]) => a.localeCompare(b));
+  }, [filtered]);
+
+  // Dates that have appointments (for calendar dots)
+  const appointmentDateSet = useMemo(() => new Set(appointments.map((a) => a.date)), [appointments]);
+
+  // Stats
+  const tmrw = tomorrowStr();
+  const weekEnd = (() => { const d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); })();
+  const todayCount = appointments.filter((a) => a.date === today).length;
+  const tmrwCount = appointments.filter((a) => a.date === tmrw).length;
+  const weekCount = appointments.filter((a) => a.date > today && a.date <= weekEnd).length;
+  const overdueCount = appointments.filter((a) => a.date < today).length;
+
+  const toggleDate = (d) => setSelectedDate((prev) => (prev === d ? null : d));
+
+  const prevMonth = () => {
+    const [y, m] = calMonth.split("-").map(Number);
+    const d = new Date(y, m - 2, 1);
+    setCalMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  };
+  const nextMonth = () => {
+    const [y, m] = calMonth.split("-").map(Number);
+    const d = new Date(y, m, 1);
+    setCalMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  };
+
+  const hasFilters = selectedDate || searchQuery.trim() || serviceFilter.trim();
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, overflowY: "auto", paddingBottom: "calc(80px + env(safe-area-inset-bottom))" }}>
+      {/* Header */}
+      <div style={{ padding: "20px 20px 14px", borderBottom: `1px solid ${LINE}` }}>
+        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, letterSpacing: "0.12em", color: MUTED, fontWeight: 500, marginBottom: 2 }}>
+          CLIENT LOG
+        </div>
+        <h1 style={{ fontSize: 26, fontWeight: 700, margin: "0 0 14px", letterSpacing: "-0.02em" }}>Schedule</h1>
+
+        {/* Stats row */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          {[
+            { label: "Today", count: todayCount, alert: true },
+            { label: "Tomorrow", count: tmrwCount, alert: false },
+            { label: "This Week", count: weekCount, alert: false },
+            ...(overdueCount > 0 ? [{ label: "Overdue", count: overdueCount, alert: true }] : []),
+          ].map(({ label, count, alert }) => (
+            <div key={label} style={{ flex: 1, background: (alert && count > 0) ? STAMP_BG : PAPER, border: `1px solid ${(alert && count > 0) ? "#EDCECA" : LINE}`, borderRadius: 10, padding: "7px 6px", textAlign: "center", minWidth: 0 }}>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 18, fontWeight: 700, color: (alert && count > 0) ? STAMP : (count > 0 ? INK : MUTED), lineHeight: 1 }}>{count}</div>
+              <div style={{ fontSize: 9.5, color: MUTED, marginTop: 3, fontWeight: 500, letterSpacing: "0.04em", textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Search */}
+        <div style={{ position: "relative", marginBottom: 8 }}>
+          <Search size={15} style={{ position: "absolute", left: 11, top: 11, color: MUTED }} />
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by client name…"
+            style={{ width: "100%", padding: "10px 10px 10px 34px", borderRadius: 10, border: `1.5px solid ${LINE}`, background: CARD, fontSize: 14, fontFamily: "'Inter', sans-serif", color: INK }}
+          />
+        </div>
+
+        {/* Service filter */}
+        <div style={{ position: "relative" }}>
+          <input
+            value={serviceFilter}
+            onChange={(e) => setServiceFilter(e.target.value)}
+            placeholder="Filter by service…"
+            style={{ width: "100%", padding: "10px 10px 10px 12px", borderRadius: 10, border: `1.5px solid ${LINE}`, background: CARD, fontSize: 14, fontFamily: "'Inter', sans-serif", color: INK }}
+          />
+        </div>
+      </div>
+
+      {/* Calendar */}
+      <div style={{ padding: "14px 16px 0" }}>
+        <MiniCalendar
+          yearMonth={calMonth}
+          appointmentDateSet={appointmentDateSet}
+          selectedDate={selectedDate}
+          onSelectDate={toggleDate}
+          onPrev={prevMonth}
+          onNext={nextMonth}
+        />
+      </div>
+
+      {/* Clear filter pill */}
+      {hasFilters && (
+        <div style={{ padding: "10px 16px 0", display: "flex", gap: 6 }}>
+          {selectedDate && (
+            <button onClick={() => setSelectedDate(null)} style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 999, border: `1px solid ${LINE}`, background: INK, color: PAPER, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>
+              {dateLabel(selectedDate)} <X size={11} />
+            </button>
+          )}
+          {(searchQuery.trim() || serviceFilter.trim()) && (
+            <button onClick={() => { setSearchQuery(""); setServiceFilter(""); }} style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 999, border: `1px solid ${LINE}`, background: CARD, color: MUTED, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>
+              Clear filters <X size={11} />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Appointment list */}
+      <div style={{ padding: "12px 16px 0" }}>
+        {!loaded && (
+          <div style={{ padding: "32px 0", textAlign: "center", color: MUTED, fontSize: 14 }}>Loading…</div>
+        )}
+        {loaded && grouped.length === 0 && (
+          <div style={{ padding: "40px 0", textAlign: "center", color: MUTED, fontSize: 14.5, lineHeight: 1.7 }}>
+            {hasFilters ? "No appointments match." : "No upcoming appointments."}
+          </div>
+        )}
+        {grouped.map(([date, apts]) => {
+          const isOverdue = date < today;
+          return (
+            <div key={date} style={{ marginBottom: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 700, color: isOverdue ? STAMP : (date === today ? INK : MUTED), letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                  {dateLabel(date)}
+                  {isOverdue && <span style={{ marginLeft: 6, fontSize: 10, background: STAMP_BG, color: STAMP, padding: "2px 6px", borderRadius: 4 }}>OVERDUE</span>}
+                </div>
+                <div style={{ flex: 1, height: 1, background: LINE }} />
+              </div>
+              {apts.map((a, i) => (
+                <div key={`${a.visitId}-${i}`} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", marginBottom: 6, background: CARD, borderRadius: 12, border: `1px solid ${isOverdue ? "#EDCECA" : LINE}` }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: avatarColor(a.clientId), color: PAPER, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0, fontFamily: "'JetBrains Mono', monospace" }}>
+                    {initials(a.clientName)}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 600, color: INK }}>{a.clientName}</div>
+                    {a.services.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+                        {a.services.map((s, si) => (
+                          <span key={si} style={{ fontSize: 11.5, background: PAPER, border: `1px solid ${LINE}`, padding: "2px 7px", borderRadius: 999, color: MUTED }}>
+                            {s}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------------- MINI CALENDAR ----------------
+const DAYS_OF_WEEK = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+
+function MiniCalendar({ yearMonth, appointmentDateSet, selectedDate, onSelectDate, onPrev, onNext }) {
+  const today = todayStr();
+  const [year, month] = yearMonth.split("-").map(Number);
+
+  const monthLabel = new Date(year, month - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+
+  // Build grid: nulls for padding, then day numbers
+  const firstDow = new Date(year, month - 1, 1).getDay();
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < firstDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  // Pad to full week rows
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const pad = (n) => String(n).padStart(2, "0");
+
+  return (
+    <div style={{ marginBottom: 4 }}>
+      {/* Month navigation */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <button onClick={onPrev} className="tap" style={{ border: "none", background: "transparent", cursor: "pointer", padding: 6, color: MUTED }}>
+          <ChevronLeft size={18} />
+        </button>
+        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 700, color: INK, letterSpacing: "0.04em" }}>
+          {monthLabel.toUpperCase()}
+        </div>
+        <button onClick={onNext} className="tap" style={{ border: "none", background: "transparent", cursor: "pointer", padding: 6, color: MUTED }}>
+          <ChevronRight size={18} />
+        </button>
+      </div>
+
+      {/* Day-of-week headers */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 4 }}>
+        {DAYS_OF_WEEK.map((d) => (
+          <div key={d} style={{ textAlign: "center", fontSize: 10.5, fontWeight: 600, color: MUTED, fontFamily: "'JetBrains Mono', monospace", padding: "2px 0" }}>
+            {d}
+          </div>
+        ))}
+      </div>
+
+      {/* Calendar grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "3px 0" }}>
+        {cells.map((day, idx) => {
+          if (!day) return <div key={`e-${idx}`} />;
+          const dateStr = `${year}-${pad(month)}-${pad(day)}`;
+          const isToday = dateStr === today;
+          const isSelected = dateStr === selectedDate;
+          const hasApt = appointmentDateSet.has(dateStr);
+          const isPast = dateStr < today;
+
+          return (
+            <button
+              key={dateStr}
+              onClick={() => onSelectDate(dateStr)}
+              className="tap"
+              style={{
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                gap: 2, padding: "5px 0", border: "none", cursor: "pointer", borderRadius: 8,
+                background: isSelected ? INK : isToday ? "#EFEDE6" : "transparent",
+              }}
+            >
+              <span style={{
+                fontSize: 13, fontWeight: isToday || isSelected ? 700 : 400,
+                color: isSelected ? PAPER : isToday ? INK : isPast ? "#C0BCB3" : INK,
+                lineHeight: 1,
+              }}>
+                {day}
+              </span>
+              {hasApt ? (
+                <div style={{ width: 5, height: 5, borderRadius: "50%", background: isSelected ? PAPER : STAMP, flexShrink: 0 }} />
+              ) : (
+                <div style={{ width: 5, height: 5 }} />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
