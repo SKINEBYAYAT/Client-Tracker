@@ -649,6 +649,72 @@ function EditClientSheet({ client, onClose, onSave }) {
   );
 }
 
+function NewVisitSheet({ clientName, onClose, onSave }) {
+  const [date, setDate] = useState(todayStr());
+  const [serviceInput, setServiceInput] = useState("");
+  const [services, setServices] = useState([]);
+  const [nextDate, setNextDate] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const addService = () => {
+    const s = serviceInput.trim();
+    if (s) {
+      setServices((prev) => [...prev, s]);
+      setServiceInput("");
+    }
+  };
+  const canSave = date && services.length > 0;
+
+  return (
+    <Sheet title="Log visit" onClose={onClose}>
+      <div style={{ fontSize: 13, color: MUTED, marginTop: -8, marginBottom: 14 }}>{clientName}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div>
+          <label style={labelStyle}>Date of visit</label>
+          <input type="date" style={fieldStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        </div>
+        <div>
+          <label style={labelStyle}>Services performed</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              style={fieldStyle}
+              value={serviceInput}
+              onChange={(e) => setServiceInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addService())}
+              placeholder="e.g. HydraFacial"
+            />
+            <button onClick={addService} type="button" className="tap" style={{ padding: "0 18px", borderRadius: 12, border: "none", background: INK, color: PAPER, fontWeight: 600, cursor: "pointer" }}>
+              Add
+            </button>
+          </div>
+          {services.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+              {services.map((s, i) => (
+                <span key={i} style={{ fontSize: 13, background: CARD, border: `1px solid ${LINE}`, padding: "5px 10px", borderRadius: 999, display: "flex", alignItems: "center", gap: 6 }}>
+                  {s}
+                  <X size={12} style={{ cursor: "pointer" }} onClick={() => setServices((prev) => prev.filter((_, idx) => idx !== i))} />
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        <div>
+          <label style={labelStyle}>Next scheduled date · optional</label>
+          <input type="date" style={fieldStyle} value={nextDate} onChange={(e) => setNextDate(e.target.value)} />
+        </div>
+        <div>
+          <label style={labelStyle}>Notes · optional</label>
+          <textarea style={{ ...fieldStyle, resize: "vertical", minHeight: 56 }} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </div>
+        <PrimaryButton disabled={!canSave} onClick={() => onSave({ date, services, nextDate, notes })}>
+          Save visit
+        </PrimaryButton>
+        {!canSave && <div style={{ fontSize: 12, color: STAMP, textAlign: "center" }}>Add a date and at least one service.</div>}
+      </div>
+    </Sheet>
+  );
+}
+
 function EditVisitSheet({ clientName, visit, onClose, onSave }) {
   const [date, setDate] = useState(visit.date || todayStr());
   const [serviceInput, setServiceInput] = useState("");
