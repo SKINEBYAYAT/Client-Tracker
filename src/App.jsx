@@ -133,6 +133,7 @@ function ClientTracker() {
   const [query, setQuery] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [sheet, setSheet] = useState(null);
+  const [editingVisit, setEditingVisit] = useState(null);
   const [error, setError] = useState("");
 
   const loadAll = useCallback(async () => {
@@ -245,6 +246,33 @@ function ClientTracker() {
     setSheet(null);
   };
 
+  const updateVisit = async (clientId, visitId, visit) => {
+    const { data: row, error } = await supabase
+      .from("visits")
+      .update({
+        visit_date: visit.date,
+        services: visit.services,
+        next_date: visit.nextDate || null,
+        notes: visit.notes,
+      })
+      .eq("id", visitId)
+      .select()
+      .single();
+    if (error) {
+      setError("Couldn't update visit: " + error.message);
+      return;
+    }
+    const updatedVisit = { id: row.id, date: row.visit_date, services: row.services, nextDate: row.next_date, notes: row.notes };
+    setVisitsByClient((prev) => {
+      const updated = (prev[clientId] || [])
+        .map((v) => (v.id === visitId ? updatedVisit : v))
+        .sort((a, b) => (a.date < b.date ? 1 : -1));
+      return { ...prev, [clientId]: updated };
+    });
+    setSheet(null);
+    setEditingVisit(null);
+  };
+
   const deleteVisit = async (clientId, visitId) => {
     const { error } = await supabase.from("visits").delete().eq("id", visitId);
     if (error) {
@@ -303,6 +331,10 @@ function ClientTracker() {
           onEdit={() => setSheet("editClient")}
           onDelete={() => deleteClient(selected.id)}
           onNewVisit={() => setSheet("newVisit")}
+          onEditVisit={(v) => {
+            setEditingVisit(v);
+            setSheet("editVisit");
+          }}
           onDeleteVisit={(vid) => deleteVisit(selected.id, vid)}
         />
       )}
@@ -313,6 +345,17 @@ function ClientTracker() {
       )}
       {sheet === "newVisit" && selected && (
         <NewVisitSheet clientName={selected.name} onClose={() => setSheet(null)} onSave={(v) => addVisit(selected.id, v)} />
+      )}
+      {sheet === "editVisit" && selected && editingVisit && (
+        <EditVisitSheet
+          clientName={selected.name}
+          visit={editingVisit}
+          onClose={() => {
+            setSheet(null);
+            setEditingVisit(null);
+          }}
+          onSave={(v) => updateVisit(selected.id, editingVisit.id, v)}
+        />
       )}
     </div>
   );
@@ -395,7 +438,7 @@ function ListScreen({ clients, visitsByClient, query, setQuery, onOpen, onNew, l
 }
 
 // ---------------- DETAIL SCREEN ----------------
-function DetailScreen({ client, visits, onBack, onEdit, onDelete, onNewVisit, onDeleteVisit }) {
+function DetailScreen({ client, visits, onBack, onEdit, onDelete, onNewVisit, onEditVisit, onDeleteVisit }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   return (
     <>
@@ -424,7 +467,7 @@ function DetailScreen({ client, visits, onBack, onEdit, onDelete, onNewVisit, on
       <div style={{ flex: 1, overflowY: "auto", padding: "16px 16px 110px" }}>
         {visits.length === 0 && <div style={{ textAlign: "center", color: MUTED, fontSize: 14, padding: "40px 20px" }}>No visits logged yet.</div>}
         {visits.map((v) => (
-          <VisitTicket key={v.id} visit={v} onDelete={() => onDeleteVisit(v.id)} />
+          <VisitTicket key={v.id} visit={v} onEdit={() => onEditVisit(v)} onDelete={() => onDeleteVisit(v.id)} />
         ))}
       </div>
 
@@ -446,14 +489,19 @@ function DetailScreen({ client, visits, onBack, onEdit, onDelete, onNewVisit, on
   );
 }
 
-function VisitTicket({ visit, onDelete }) {
+function VisitTicket({ visit, onEdit, onDelete }) {
   return (
     <div style={{ background: CARD, border: `1px dashed ${LINE}`, borderRadius: 12, padding: "14px 14px", marginBottom: 12, position: "relative" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5, fontWeight: 700, color: INK }}>{fmtDate(visit.date)}</div>
-        <button onClick={onDelete} className="tap" style={{ border: "none", background: "transparent", cursor: "pointer", color: MUTED }}>
-          <X size={14} />
-        </button>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onEdit} className="tap" style={{ border: "none", background: "transparent", cursor: "pointer", color: MUTED }}>
+            <Pencil size={13} />
+          </button>
+          <button onClick={onDelete} className="tap" style={{ border: "none", background: "transparent", cursor: "pointer", color: MUTED }}>
+            <X size={14} />
+          </button>
+        </div>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
         {visit.services.map((s, i) => (
@@ -581,12 +629,12 @@ function EditClientSheet({ client, onClose, onSave }) {
   );
 }
 
-function NewVisitSheet({ clientName, onClose, onSave }) {
-  const [date, setDate] = useState(todayStr());
+function EditVisitSheet({ clientName, visit, onClose, onSave }) {
+  const [date, setDate] = useState(visit.date || todayStr());
   const [serviceInput, setServiceInput] = useState("");
-  const [services, setServices] = useState([]);
-  const [nextDate, setNextDate] = useState("");
-  const [notes, setNotes] = useState("");
+  const [services, setServices] = useState(visit.services || []);
+  const [nextDate, setNextDate] = useState(visit.nextDate || "");
+  const [notes, setNotes] = useState(visit.notes || "");
 
   const addService = () => {
     const s = serviceInput.trim();
@@ -598,7 +646,7 @@ function NewVisitSheet({ clientName, onClose, onSave }) {
   const canSave = date && services.length > 0;
 
   return (
-    <Sheet title="Log visit" onClose={onClose}>
+    <Sheet title="Edit visit" onClose={onClose}>
       <div style={{ fontSize: 13, color: MUTED, marginTop: -8, marginBottom: 14 }}>{clientName}</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div>
@@ -639,7 +687,7 @@ function NewVisitSheet({ clientName, onClose, onSave }) {
           <textarea style={{ ...fieldStyle, resize: "vertical", minHeight: 56 }} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </div>
         <PrimaryButton disabled={!canSave} onClick={() => onSave({ date, services, nextDate, notes })}>
-          Save visit
+          Save changes
         </PrimaryButton>
         {!canSave && <div style={{ fontSize: 12, color: STAMP, textAlign: "center" }}>Add a date and at least one service.</div>}
       </div>
