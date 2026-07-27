@@ -1,3 +1,5 @@
+#!/bin/bash
+cat > src/App.jsx << 'REPLIT_EOF'
 import React, { useState, useEffect, useCallback } from "react";
 import { Plus, Search, Calendar, X, Trash2, Phone, ChevronLeft, ChevronRight, LogOut, Pencil } from "lucide-react";
 import { supabase } from "./supabaseClient";
@@ -715,3 +717,5 @@ function EditVisitSheet({ clientName, visit, onClose, onSave }) {
   );
 }
 
+REPLIT_EOF
+echo "App.jsx updated with unique client avatars."
