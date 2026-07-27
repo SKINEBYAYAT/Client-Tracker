@@ -1,0 +1,63 @@
+Please investigate and fix the crash that happens when I tap ”+ Log a Visit” in my Client Log app, then commit the fix and push it to the connected GitHub repository.
+
+What the app is
+
+* Frontend: React + Vite
+* Backend: Supabase
+* Authentication: Email + Password
+* Database: Supabase
+
+Expected behavior
+
+When I press ”+ Log a Visit”, the app should open the visit form (or save the visit if already on the form) without crashing.
+
+Each visit should correctly:
+
+* Link to the selected client.
+* Save the visit date.
+* Save the services performed.
+* Save the next appointment date (optional).
+* Save visit notes.
+* Refresh the client’s visit history immediately.
+* Update the client’s latest visit date on the home screen.
+* Update the follow-up countdown badge.
+
+Please do the following
+
+1. Reproduce the crash locally.
+2. Find the exact root cause instead of applying a temporary workaround.
+3. Check the browser console and terminal for JavaScript errors.
+4. Verify all React components, hooks, routing, and state management related to logging visits.
+5. Verify all Supabase queries, inserts, updates, and foreign-key relationships.
+6. Ensure required fields are validated before inserting into Supabase.
+7. Make sure null or undefined values cannot crash the app.
+8. Add proper error handling with user-friendly messages instead of blank-screen crashes.
+9. Verify that the Visit History page still works after saving.
+10. Test creating multiple visits for the same client.
+
+Check for common issues
+
+* Incorrect table or column names.
+* Missing client_id when inserting a visit.
+* Wrong Supabase schema or RLS policy.
+* Invalid date formatting.
+* Missing required fields.
+* React state becoming undefined.
+* Async functions not awaited.
+* Navigation occurring before the insert finishes.
+* Any runtime exceptions.
+
+After fixing
+
+* Run the project and confirm that:
+    * Creating a visit works.
+    * Existing clients still load correctly.
+    * Visit history displays correctly.
+    * No console errors remain.
+    * The production build succeeds without errors.
+
+Finally:
+
+1. Commit the changes with a clear commit message (e.g. Fix Log Visit crash).
+2. Push the commit to the connected GitHub repository.
+3. Tell me exactly what caused the crash, which files were modified, and what changes were made.
