@@ -1,0 +1,215 @@
+I want to redesign the "Log Visit" screen to provide a much better user experience. The current screen feels confusing, requires too many steps, and isn't optimized for quick use on mobile. Please redesign the UI while keeping all existing functionality and Supabase integration.
+
+GOALS:
+- Make logging a visit take as few taps as possible.
+- Make the UI feel like a premium native iPhone app.
+- Keep the design clean, modern, and mobile-first.
+- Do not break any existing functionality.
+
+========================
+NEW LAYOUT
+========================
+
+Reorganize the screen into this order:
+
+Log Visit
+
+Client
+👤 Client Name
+
+Service *
+
+Appointment Date
+
+Appointment Time
+
++ Add Notes
+
++ Schedule Follow-up
+
+----------------------
+
+Save Visit
+
+The layout should have generous spacing (20-24px between sections), consistent typography, rounded inputs, and a clean modern appearance.
+
+========================
+CLIENT SECTION
+========================
+
+Display the client clearly at the top.
+
+Example:
+
+Client
+
+👤 Celine Haidar
+
+Use a larger font for the client's name.
+
+========================
+SERVICE SELECTION
+========================
+
+Remove the current "Services Performed" text input and the Add button.
+
+Replace it with a searchable dropdown or multi-select component that displays existing services.
+
+Example:
+
+Service *
+
+[ Select Service ▼ ]
+
+If multiple services are selected, display them as removable chips/tags below the selector.
+
+Allow users to create a new service only if it does not already exist.
+
+The service selection should be simple, fast, and touch-friendly.
+
+========================
+DATE & TIME
+========================
+
+Use native mobile date and time pickers.
+
+Do not require manual typing.
+
+Fields:
+
+Appointment Date
+
+Appointment Time
+
+If the visit originated from an appointment, automatically prefill the date and time.
+
+========================
+NOTES
+========================
+
+Do not display the Notes field immediately.
+
+Instead show:
+
++ Add Notes
+
+When tapped, smoothly expand to reveal the Notes textarea.
+
+========================
+FOLLOW-UP APPOINTMENT
+========================
+
+Do not immediately display the follow-up fields.
+
+Instead show:
+
++ Schedule Follow-up
+
+When tapped, smoothly expand to reveal:
+
+Follow-up Date
+
+Follow-up Time
+
+Both should use native date/time pickers.
+
+========================
+SAVE BUTTON
+========================
+
+The Save Visit button should:
+
+- be full width
+- have rounded corners
+- use the primary app color
+- always remain visible near the bottom
+- preferably be sticky on mobile while scrolling
+
+Do NOT disable the Save button.
+
+========================
+VALIDATION
+========================
+
+Instead of disabling the Save button and showing a generic error message at the bottom, validate each field individually.
+
+If a required field is missing:
+
+- Highlight that field with a red border.
+- Display an error message directly below it.
+
+Example:
+
+Service *
+
+Please select a service.
+
+Do not use the current generic message:
+
+"Add a date, time, and at least one service."
+
+Users should instantly know which field needs attention.
+
+========================
+VISUAL DESIGN
+========================
+
+Improve spacing throughout the form.
+
+Use:
+
+- rounded cards
+- modern typography
+- consistent font sizes
+- larger touch targets
+- subtle shadows
+- clean white background
+- mobile-first spacing
+
+The screen should feel like a professional iOS application.
+
+========================
+ANIMATIONS
+========================
+
+Add smooth animations when:
+
+- opening Notes
+- opening Follow-up
+- showing validation errors
+- opening dropdowns
+
+Animations should be subtle and not affect performance.
+
+========================
+KEEP EXISTING FEATURES
+========================
+
+Do NOT remove or break any existing functionality.
+
+Everything should continue working:
+
+- Save Visit
+- Edit Visit
+- Delete Visit
+- Supabase integration
+- Existing database schema
+- Existing API calls
+- Existing visit history
+- Existing notifications
+
+Only improve the user interface and user experience.
+
+========================
+FINAL GOAL
+========================
+
+A salon professional should be able to log a visit in only 3 simple steps:
+
+1. Select the service.
+2. Confirm the appointment date and time (already prefilled whenever possible).
+3. Tap "Save Visit".
+
+Optional features such as Notes and Follow-up should stay hidden unless the user chooses to use them.
+
+Please redesign the entire Log Visit screen to achieve this while maintaining full compatibility with the current application.

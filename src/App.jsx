@@ -193,6 +193,18 @@ function ClientTracker() {
     return result;
   }, [clients, visitsByClient]);
 
+  // Distinct list of every service ever logged — powers the service picker
+  const allServices = useMemo(() => {
+    const seen = new Map();
+    allVisitsFlat.forEach((v) =>
+      (v.services || []).forEach((s) => {
+        const k = s.toLowerCase();
+        if (!seen.has(k)) seen.set(k, s);
+      })
+    );
+    return [...seen.values()].sort((a, b) => a.localeCompare(b));
+  }, [allVisitsFlat]);
+
   // Upcoming appointments derived from visits that have a next_date set
   const appointments = useMemo(() => {
     const result = [];
@@ -389,6 +401,10 @@ function ClientTracker() {
         button:active { transform: scale(0.97); }
         input:focus, textarea:focus { outline: none; border-color: ${INK} !important; }
         .tap { transition: transform 0.08s ease; }
+        .expandIn { animation: expandIn 0.22s ease; }
+        @keyframes expandIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: none; } }
+        .errIn { animation: errIn 0.18s ease; }
+        @keyframes errIn { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
       `}</style>
 
       {error && <div style={{ background: STAMP_BG, color: STAMP, padding: "8px 20px", fontSize: 12.5, fontWeight: 500 }}>{error}</div>}
@@ -430,7 +446,7 @@ function ClientTracker() {
             <EditClientSheet client={selected} onClose={() => setSheet(null)} onSave={(data) => updateClient(selected.id, data)} />
           )}
           {sheet === "newVisit" && selected && (
-            <NewVisitSheet clientName={selected.name} onClose={() => setSheet(null)} onSave={(v) => addVisit(selected.id, v)} allVisitsFlat={allVisitsFlat} />
+            <NewVisitSheet clientName={selected.name} onClose={() => setSheet(null)} onSave={(v) => addVisit(selected.id, v)} allVisitsFlat={allVisitsFlat} allServices={allServices} />
           )}
           {sheet === "editVisit" && selected && editingVisit && (
             <EditVisitSheet
@@ -442,6 +458,7 @@ function ClientTracker() {
               }}
               onSave={(v) => updateVisit(selected.id, editingVisit.id, v)}
               allVisitsFlat={allVisitsFlat}
+              allServices={allServices}
             />
           )}
         </>
@@ -757,84 +774,203 @@ function EditClientSheet({ client, onClose, onSave }) {
   );
 }
 
-function NewVisitSheet({ clientName, onClose, onSave, allVisitsFlat }) {
-  const [date, setDate] = useState(todayStr());
-  const [appointmentTime, setAppointmentTime] = useState("");
-  const [serviceInput, setServiceInput] = useState("");
-  const [services, setServices] = useState([]);
-  const [nextDate, setNextDate] = useState("");
-  const [notes, setNotes] = useState("");
+// Shared redesigned visit form used by both Log Visit and Edit Visit
+function VisitForm({ clientName, initial, allServices, allVisitsFlat, excludeVisitId, onSave, saveLabel }) {
+  const [date, setDate] = useState(initial?.date || todayStr());
+  const [appointmentTime, setAppointmentTime] = useState(initial?.appointmentTime ? initial.appointmentTime.slice(0, 5) : "");
+  const [services, setServices] = useState(initial?.services || []);
+  const [serviceQuery, setServiceQuery] = useState("");
+  const [dropOpen, setDropOpen] = useState(false);
+  const [nextDate, setNextDate] = useState(initial?.nextDate || "");
+  const [notes, setNotes] = useState(initial?.notes || "");
+  const [showNotes, setShowNotes] = useState(Boolean(initial?.notes));
+  const [showFollowUp, setShowFollowUp] = useState(Boolean(initial?.nextDate));
+  const [attempted, setAttempted] = useState(false);
 
   const conflict = useMemo(
-    () => checkConflict(allVisitsFlat, nextDate, appointmentTime),
-    [allVisitsFlat, nextDate, appointmentTime]
+    () => checkConflict(allVisitsFlat, nextDate, appointmentTime, excludeVisitId),
+    [allVisitsFlat, nextDate, appointmentTime, excludeVisitId]
   );
 
-  const addService = () => {
-    const s = serviceInput.trim();
-    if (s) { setServices((prev) => [...prev, s]); setServiceInput(""); }
+  const q = serviceQuery.trim();
+  const options = useMemo(() => {
+    const pool = allServices.filter((s) => !services.some((x) => x.toLowerCase() === s.toLowerCase()));
+    const ql = q.toLowerCase();
+    return (ql ? pool.filter((s) => s.toLowerCase().includes(ql)) : pool).slice(0, 30);
+  }, [allServices, services, q]);
+  const canCreate =
+    q &&
+    !allServices.some((s) => s.toLowerCase() === q.toLowerCase()) &&
+    !services.some((s) => s.toLowerCase() === q.toLowerCase());
+
+  const pickService = (s) => {
+    setServices((prev) => [...prev, s]);
+    setServiceQuery("");
   };
-  const canSave = date && appointmentTime && services.length > 0 && !conflict;
+
+  const errors = {
+    services: services.length === 0 ? "Please select a service." : "",
+    date: !date ? "Please choose a date." : "",
+    appointmentTime: !appointmentTime ? "Please choose a time." : "",
+  };
+  const showErr = (k) => attempted && errors[k];
+  const errBorder = { border: `1.5px solid ${STAMP}` };
+
+  const save = () => {
+    setAttempted(true);
+    if (errors.services || errors.date || errors.appointmentTime || conflict) return;
+    onSave({ date, appointmentTime, services, nextDate, notes });
+  };
+
+  const ErrMsg = ({ children }) => (
+    <div className="errIn" style={{ fontSize: 12.5, color: STAMP, marginTop: 6, fontWeight: 500 }}>{children}</div>
+  );
+  const ghostBtn = {
+    display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "13px 14px",
+    borderRadius: 12, border: `1.5px dashed ${LINE}`, background: "transparent",
+    color: MUTED, fontSize: 14.5, fontWeight: 600, cursor: "pointer", fontFamily: "'Inter', sans-serif",
+  };
 
   return (
-    <Sheet title="Log visit" onClose={onClose}>
-      <div style={{ fontSize: 13, color: MUTED, marginTop: -8, marginBottom: 14 }}>{clientName}</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div>
-          <label style={labelStyle}>Date of visit</label>
-          <input type="date" style={fieldStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+    <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+      {/* Client */}
+      <div>
+        <label style={labelStyle}>Client</label>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: "13px 14px", boxShadow: "0 1px 3px rgba(30,30,28,0.05)" }}>
+          <span style={{ fontSize: 18 }}>👤</span>
+          <span style={{ fontSize: 17.5, fontWeight: 700, color: INK }}>{clientName}</span>
         </div>
-        <div>
-          <label style={labelStyle}>Appointment time <span style={{ color: STAMP }}>*</span></label>
-          <input type="time" style={fieldStyle} value={appointmentTime} onChange={(e) => setAppointmentTime(e.target.value)} />
-          {conflict && (
-            <div style={{ marginTop: 8, padding: "10px 12px", background: STAMP_BG, borderRadius: 10, fontSize: 13, color: STAMP, lineHeight: 1.6 }}>
-              ⚠ Time unavailable.<br />
-              <strong>{conflict.clientName}</strong> already has an appointment at {fmtTime(conflict.time)}.<br />
-              Please choose a time at least 2 hours before or after.
+      </div>
+
+      {/* Service */}
+      <div>
+        <label style={labelStyle}>Service <span style={{ color: STAMP }}>*</span></label>
+        <div style={{ position: "relative" }}>
+          <input
+            style={{ ...fieldStyle, ...(showErr("services") ? errBorder : null) }}
+            value={serviceQuery}
+            onChange={(e) => setServiceQuery(e.target.value)}
+            onFocus={() => setDropOpen(true)}
+            onBlur={() => setTimeout(() => setDropOpen(false), 120)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                if (canCreate) pickService(q);
+                else if (options.length > 0) pickService(options[0]);
+              }
+            }}
+            placeholder="Select or search services…"
+          />
+          {dropOpen && (options.length > 0 || canCreate) && (
+            <div className="expandIn" style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, zIndex: 20, background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, boxShadow: "0 8px 24px rgba(30,30,28,0.12)", overflow: "hidden", maxHeight: 220, overflowY: "auto" }}>
+              {options.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); pickService(s); }}
+                  style={{ display: "block", width: "100%", textAlign: "left", padding: "13px 14px", border: "none", borderBottom: `1px solid ${PAPER}`, background: "transparent", fontSize: 15, color: INK, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}
+                >
+                  {s}
+                </button>
+              ))}
+              {canCreate && (
+                <button
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); pickService(q); }}
+                  style={{ display: "block", width: "100%", textAlign: "left", padding: "13px 14px", border: "none", background: PAPER, fontSize: 15, fontWeight: 600, color: INK, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}
+                >
+                  ＋ Create “{q}”
+                </button>
+              )}
             </div>
           )}
         </div>
-        <div>
-          <label style={labelStyle}>Services performed</label>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input
-              style={fieldStyle}
-              value={serviceInput}
-              onChange={(e) => setServiceInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addService())}
-              placeholder="e.g. HydraFacial"
-            />
-            <button onClick={addService} type="button" className="tap" style={{ padding: "0 18px", borderRadius: 12, border: "none", background: INK, color: PAPER, fontWeight: 600, cursor: "pointer" }}>
-              Add
+        {services.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 10 }}>
+            {services.map((s, i) => (
+              <span key={i} className="expandIn" style={{ fontSize: 13.5, fontWeight: 500, background: INK, color: PAPER, padding: "7px 12px", borderRadius: 999, display: "flex", alignItems: "center", gap: 7 }}>
+                {s}
+                <X size={13} style={{ cursor: "pointer", opacity: 0.7 }} onClick={() => setServices((prev) => prev.filter((_, idx) => idx !== i))} />
+              </span>
+            ))}
+          </div>
+        )}
+        {showErr("services") && <ErrMsg>{errors.services}</ErrMsg>}
+      </div>
+
+      {/* Date & time */}
+      <div>
+        <label style={labelStyle}>Appointment date</label>
+        <input type="date" style={{ ...fieldStyle, ...(showErr("date") ? errBorder : null) }} value={date} onChange={(e) => setDate(e.target.value)} />
+        {showErr("date") && <ErrMsg>{errors.date}</ErrMsg>}
+      </div>
+      <div>
+        <label style={labelStyle}>Appointment time</label>
+        <input type="time" style={{ ...fieldStyle, ...(showErr("appointmentTime") ? errBorder : null) }} value={appointmentTime} onChange={(e) => setAppointmentTime(e.target.value)} />
+        {showErr("appointmentTime") && <ErrMsg>{errors.appointmentTime}</ErrMsg>}
+      </div>
+
+      {/* Notes — collapsed by default */}
+      {!showNotes ? (
+        <button type="button" className="tap" style={ghostBtn} onClick={() => setShowNotes(true)}>
+          <Plus size={16} /> Add Notes
+        </button>
+      ) : (
+        <div className="expandIn">
+          <label style={labelStyle}>Notes</label>
+          <textarea
+            autoFocus={!initial?.notes}
+            style={{ ...fieldStyle, resize: "vertical", minHeight: 72 }}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Anything worth remembering…"
+          />
+        </div>
+      )}
+
+      {/* Follow-up — collapsed by default */}
+      {!showFollowUp ? (
+        <button type="button" className="tap" style={ghostBtn} onClick={() => setShowFollowUp(true)}>
+          <Plus size={16} /> Schedule Follow-up
+        </button>
+      ) : (
+        <div className="expandIn">
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <label style={labelStyle}>Follow-up date</label>
+            <button type="button" onClick={() => { setShowFollowUp(false); setNextDate(""); }} style={{ border: "none", background: "transparent", color: MUTED, fontSize: 12, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>
+              Remove
             </button>
           </div>
-          {services.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
-              {services.map((s, i) => (
-                <span key={i} style={{ fontSize: 13, background: CARD, border: `1px solid ${LINE}`, padding: "5px 10px", borderRadius: 999, display: "flex", alignItems: "center", gap: 6 }}>
-                  {s}
-                  <X size={12} style={{ cursor: "pointer" }} onClick={() => setServices((prev) => prev.filter((_, idx) => idx !== i))} />
-                </span>
-              ))}
+          <input type="date" style={fieldStyle} value={nextDate} onChange={(e) => setNextDate(e.target.value)} />
+          <div style={{ fontSize: 12, color: MUTED, marginTop: 6 }}>Follow-up is booked at the appointment time above.</div>
+          {conflict && (
+            <div className="errIn" style={{ marginTop: 8, padding: "11px 13px", background: STAMP_BG, borderRadius: 12, fontSize: 13, color: STAMP, lineHeight: 1.6 }}>
+              ⚠ Time unavailable — <strong>{conflict.clientName}</strong> already has an appointment at {fmtTime(conflict.time)} that day. Choose a time at least 2 hours before or after.
             </div>
           )}
         </div>
-        <div>
-          <label style={labelStyle}>Next scheduled date · optional</label>
-          <input type="date" style={fieldStyle} value={nextDate} onChange={(e) => setNextDate(e.target.value)} />
-        </div>
-        <div>
-          <label style={labelStyle}>Notes · optional</label>
-          <textarea style={{ ...fieldStyle, resize: "vertical", minHeight: 56 }} value={notes} onChange={(e) => setNotes(e.target.value)} />
-        </div>
-        <PrimaryButton disabled={!canSave} onClick={() => onSave({ date, appointmentTime, services, nextDate, notes })}>
-          Save visit
-        </PrimaryButton>
-        {!canSave && !conflict && (
-          <div style={{ fontSize: 12, color: STAMP, textAlign: "center" }}>Add a date, time, and at least one service.</div>
-        )}
+      )}
+
+      {/* Sticky save */}
+      <div style={{ position: "sticky", bottom: 0, background: PAPER, paddingTop: 6, marginTop: -6 }}>
+        <PrimaryButton onClick={save}>{saveLabel}</PrimaryButton>
       </div>
+    </div>
+  );
+}
+
+function NewVisitSheet({ clientName, onClose, onSave, allVisitsFlat, allServices }) {
+  return (
+    <Sheet title="Log Visit" onClose={onClose}>
+      <VisitForm
+        clientName={clientName}
+        initial={null}
+        allServices={allServices}
+        allVisitsFlat={allVisitsFlat}
+        excludeVisitId={null}
+        onSave={onSave}
+        saveLabel="Save Visit"
+      />
     </Sheet>
   );
 }
@@ -1169,85 +1305,18 @@ function MiniCalendar({ yearMonth, appointmentDateSet, selectedDate, onSelectDat
   );
 }
 
-function EditVisitSheet({ clientName, visit, onClose, onSave, allVisitsFlat }) {
-  const [date, setDate] = useState(visit.date || todayStr());
-  const [appointmentTime, setAppointmentTime] = useState(visit.appointmentTime ? visit.appointmentTime.slice(0, 5) : "");
-  const [serviceInput, setServiceInput] = useState("");
-  const [services, setServices] = useState(visit.services || []);
-  const [nextDate, setNextDate] = useState(visit.nextDate || "");
-  const [notes, setNotes] = useState(visit.notes || "");
-
-  // Exclude self (visit.id) so it doesn't conflict with its own original slot
-  const conflict = useMemo(
-    () => checkConflict(allVisitsFlat, nextDate, appointmentTime, visit.id),
-    [allVisitsFlat, nextDate, appointmentTime, visit.id]
-  );
-
-  const addService = () => {
-    const s = serviceInput.trim();
-    if (s) { setServices((prev) => [...prev, s]); setServiceInput(""); }
-  };
-  const canSave = date && appointmentTime && services.length > 0 && !conflict;
-
+function EditVisitSheet({ clientName, visit, onClose, onSave, allVisitsFlat, allServices }) {
   return (
-    <Sheet title="Edit visit" onClose={onClose}>
-      <div style={{ fontSize: 13, color: MUTED, marginTop: -8, marginBottom: 14 }}>{clientName}</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div>
-          <label style={labelStyle}>Date of visit</label>
-          <input type="date" style={fieldStyle} value={date} onChange={(e) => setDate(e.target.value)} />
-        </div>
-        <div>
-          <label style={labelStyle}>Appointment time <span style={{ color: STAMP }}>*</span></label>
-          <input type="time" style={fieldStyle} value={appointmentTime} onChange={(e) => setAppointmentTime(e.target.value)} />
-          {conflict && (
-            <div style={{ marginTop: 8, padding: "10px 12px", background: STAMP_BG, borderRadius: 10, fontSize: 13, color: STAMP, lineHeight: 1.6 }}>
-              ⚠ Time unavailable.<br />
-              <strong>{conflict.clientName}</strong> already has an appointment at {fmtTime(conflict.time)}.<br />
-              Please choose a time at least 2 hours before or after.
-            </div>
-          )}
-        </div>
-        <div>
-          <label style={labelStyle}>Services performed</label>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input
-              style={fieldStyle}
-              value={serviceInput}
-              onChange={(e) => setServiceInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addService())}
-              placeholder="e.g. HydraFacial"
-            />
-            <button onClick={addService} type="button" className="tap" style={{ padding: "0 18px", borderRadius: 12, border: "none", background: INK, color: PAPER, fontWeight: 600, cursor: "pointer" }}>
-              Add
-            </button>
-          </div>
-          {services.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
-              {services.map((s, i) => (
-                <span key={i} style={{ fontSize: 13, background: CARD, border: `1px solid ${LINE}`, padding: "5px 10px", borderRadius: 999, display: "flex", alignItems: "center", gap: 6 }}>
-                  {s}
-                  <X size={12} style={{ cursor: "pointer" }} onClick={() => setServices((prev) => prev.filter((_, idx) => idx !== i))} />
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-        <div>
-          <label style={labelStyle}>Next scheduled date · optional</label>
-          <input type="date" style={fieldStyle} value={nextDate} onChange={(e) => setNextDate(e.target.value)} />
-        </div>
-        <div>
-          <label style={labelStyle}>Notes · optional</label>
-          <textarea style={{ ...fieldStyle, resize: "vertical", minHeight: 56 }} value={notes} onChange={(e) => setNotes(e.target.value)} />
-        </div>
-        <PrimaryButton disabled={!canSave} onClick={() => onSave({ date, appointmentTime, services, nextDate, notes })}>
-          Save changes
-        </PrimaryButton>
-        {!canSave && !conflict && (
-          <div style={{ fontSize: 12, color: STAMP, textAlign: "center" }}>Add a date, time, and at least one service.</div>
-        )}
-      </div>
+    <Sheet title="Edit Visit" onClose={onClose}>
+      <VisitForm
+        clientName={clientName}
+        initial={visit}
+        allServices={allServices}
+        allVisitsFlat={allVisitsFlat}
+        excludeVisitId={visit.id}
+        onSave={onSave}
+        saveLabel="Save Changes"
+      />
     </Sheet>
   );
 }
