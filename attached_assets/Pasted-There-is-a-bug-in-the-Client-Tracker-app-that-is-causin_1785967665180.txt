@@ -1,0 +1,76 @@
+There is a bug in the Client Tracker app that is causing visits to not appear correctly on the Calendar.
+
+BUG:
+Some visits save successfully, but they do NOT appear on the Calendar. Only some visits are displayed.
+
+For example:
+- If I select certain services like "Facial", the visit appears.
+- If I create or use another service (custom service), many of those visits never appear on the Calendar even though they are saved successfully.
+
+This should NEVER happen.
+
+Please investigate and fix the root cause instead of adding a workaround.
+
+Things to check:
+
+1. Verify that EVERY saved visit is inserted into the database correctly.
+
+2. Verify that the Calendar fetches ALL visits regardless of:
+   - service name
+   - custom services
+   - recommended services
+   - multiple services
+   - uppercase/lowercase differences
+   - spaces or special characters
+
+3. Ensure the Calendar is NOT filtering visits by service name.
+
+4. Ensure the Calendar displays visits based ONLY on:
+   - appointment date
+   - appointment time
+   - client
+   - visit record
+
+The service name should never determine whether an event appears.
+
+5. Check if custom services are stored in a different format than recommended services.
+
+6. Check if services are being stored as:
+   - string
+   - array
+   - JSON
+   - object
+
+Make the Calendar support every format consistently.
+
+7. Verify that after saving a visit:
+   - the visit exists in Supabase
+   - the Calendar immediately refreshes
+   - no refresh is required
+   - no cache is preventing new visits from appearing
+
+8. Check for timezone issues that could move events to another day.
+
+9. Inspect the Calendar query for hidden filters such as:
+   - WHERE service = ...
+   - INNER JOIN failures
+   - null values
+   - incorrect date comparisons
+
+10. Compare a visit that appears on the Calendar with one that does not.
+
+Find exactly which field is different and fix the logic so both appear.
+
+11. Add temporary console logs for debugging:
+- Data being sent to Supabase.
+- Saved database record.
+- Calendar query result.
+- Final events rendered on the Calendar.
+
+12. After the fix, every saved visit must:
+- appear in Visit History
+- appear on the Calendar
+- appear immediately after saving
+- work for every service, including newly created custom services
+
+Do not create a workaround. Find and fix the root cause so the Calendar always displays every saved visit correctly.

@@ -205,20 +205,24 @@ function ClientTracker() {
     return [...seen.values()].sort((a, b) => a.localeCompare(b));
   }, [allVisitsFlat]);
 
-  // Upcoming appointments derived from visits that have a next_date set
+  // Calendar events: EVERY visit appears at its own appointment date/time,
+  // plus a separate follow-up event when a next_date is scheduled.
   const appointments = useMemo(() => {
     const result = [];
     clients.forEach((client) => {
       (visitsByClient[client.id] || []).forEach((visit) => {
+        const base = {
+          clientId: client.id,
+          clientName: client.name,
+          visitId: visit.id,
+          services: visit.services || [],
+          appointmentTime: visit.appointmentTime || "",
+        };
+        if (visit.date) {
+          result.push({ ...base, date: String(visit.date).slice(0, 10), type: "visit" });
+        }
         if (visit.nextDate) {
-          result.push({
-            clientId: client.id,
-            clientName: client.name,
-            visitId: visit.id,
-            date: visit.nextDate,
-            services: visit.services || [],
-            appointmentTime: visit.appointmentTime || "",
-          });
+          result.push({ ...base, date: String(visit.nextDate).slice(0, 10), type: "followup" });
         }
       });
     });
@@ -837,7 +841,6 @@ function VisitForm({ clientName, initial, allServices, allVisitsFlat, excludeVis
       <div>
         <label style={labelStyle}>Client</label>
         <div style={{ display: "flex", alignItems: "center", gap: 10, background: CARD, border: `1px solid ${LINE}`, borderRadius: 14, padding: "13px 14px", boxShadow: "0 1px 3px rgba(30,30,28,0.05)" }}>
-          <span style={{ fontSize: 18 }}>👤</span>
           <span style={{ fontSize: 17.5, fontWeight: 700, color: INK }}>{clientName}</span>
         </div>
       </div>
@@ -993,7 +996,7 @@ function dateLabel(dateStr) {
 // ---------------- TAB BAR ----------------
 function TabBar({ activeTab, onSwitch, appointments }) {
   const today = todayStr();
-  const overdueCount = appointments.filter((a) => a.date < today).length;
+  const overdueCount = appointments.filter((a) => a.type === "followup" && a.date < today).length;
   const todayCount = appointments.filter((a) => a.date === today).length;
   const badge = overdueCount + todayCount;
 
@@ -1038,7 +1041,13 @@ function ScheduleScreen({ appointments, loaded }) {
   // Filtered appointments
   const filtered = useMemo(() => {
     let list = appointments;
-    if (selectedDate) list = list.filter((a) => a.date === selectedDate);
+    if (selectedDate) {
+      list = list.filter((a) => a.date === selectedDate);
+    } else {
+      // Default list: today & upcoming events, plus overdue follow-ups.
+      // (Past visits stay visible via calendar dots / selecting a day.)
+      list = list.filter((a) => a.date >= today || a.type === "followup");
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       list = list.filter((a) => a.clientName.toLowerCase().includes(q));
@@ -1074,7 +1083,7 @@ function ScheduleScreen({ appointments, loaded }) {
   const todayCount = appointments.filter((a) => a.date === today).length;
   const tmrwCount = appointments.filter((a) => a.date === tmrw).length;
   const weekCount = appointments.filter((a) => a.date > today && a.date <= weekEnd).length;
-  const overdueCount = appointments.filter((a) => a.date < today).length;
+  const overdueCount = appointments.filter((a) => a.type === "followup" && a.date < today).length;
 
   const toggleDate = (d) => setSelectedDate((prev) => (prev === d ? null : d));
 
@@ -1199,6 +1208,11 @@ function ScheduleScreen({ appointments, loaded }) {
                         </span>
                       )}
                       <span style={{ fontSize: 14.5, fontWeight: 600, color: INK }}>{a.clientName}</span>
+                      {a.type === "followup" && (
+                        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", background: PAPER, border: `1px solid ${LINE}`, color: MUTED, padding: "2px 6px", borderRadius: 4, textTransform: "uppercase" }}>
+                          Follow-up
+                        </span>
+                      )}
                     </div>
                     {a.services.length > 0 && (
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
