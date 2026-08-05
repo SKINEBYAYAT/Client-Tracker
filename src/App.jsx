@@ -37,16 +37,18 @@ function fmtTime(t) {
   return `${hour}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 // Reusable scheduling utility — returns first conflicting visit or null.
+// Appointments = (next scheduled date, appointment time). Only visits whose
+// NEXT scheduled date matches the given date are compared — never other dates.
 // Extensible: add staff, room, or duration params here in future.
-function checkConflict(allVisitsFlat, date, timeStr, excludeVisitId = null) {
-  if (!date || !timeStr) return null;
-  // Normalize dates to plain YYYY-MM-DD so only same-date visits are compared
-  const targetDate = String(date).slice(0, 10);
+function checkConflict(allVisitsFlat, appointmentDate, timeStr, excludeVisitId = null) {
+  if (!appointmentDate || !timeStr) return null;
+  // Normalize dates to plain YYYY-MM-DD so only same-date appointments are compared
+  const targetDate = String(appointmentDate).slice(0, 10);
   const [newH, newM] = timeStr.split(":").map(Number);
   const newMinutes = newH * 60 + newM;
   for (const v of allVisitsFlat) {
     if (excludeVisitId && v.id === excludeVisitId) continue;
-    if (!v.date || String(v.date).slice(0, 10) !== targetDate) continue;
+    if (!v.nextDate || String(v.nextDate).slice(0, 10) !== targetDate) continue;
     if (!v.appointmentTime) continue;
     const t = v.appointmentTime.slice(0, 5);
     const [h, m] = t.split(":").map(Number);
@@ -764,8 +766,8 @@ function NewVisitSheet({ clientName, onClose, onSave, allVisitsFlat }) {
   const [notes, setNotes] = useState("");
 
   const conflict = useMemo(
-    () => checkConflict(allVisitsFlat, date, appointmentTime),
-    [allVisitsFlat, date, appointmentTime]
+    () => checkConflict(allVisitsFlat, nextDate, appointmentTime),
+    [allVisitsFlat, nextDate, appointmentTime]
   );
 
   const addService = () => {
@@ -1177,8 +1179,8 @@ function EditVisitSheet({ clientName, visit, onClose, onSave, allVisitsFlat }) {
 
   // Exclude self (visit.id) so it doesn't conflict with its own original slot
   const conflict = useMemo(
-    () => checkConflict(allVisitsFlat, date, appointmentTime, visit.id),
-    [allVisitsFlat, date, appointmentTime, visit.id]
+    () => checkConflict(allVisitsFlat, nextDate, appointmentTime, visit.id),
+    [allVisitsFlat, nextDate, appointmentTime, visit.id]
   );
 
   const addService = () => {
