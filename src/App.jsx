@@ -40,11 +40,13 @@ function fmtTime(t) {
 // Extensible: add staff, room, or duration params here in future.
 function checkConflict(allVisitsFlat, date, timeStr, excludeVisitId = null) {
   if (!date || !timeStr) return null;
+  // Normalize dates to plain YYYY-MM-DD so only same-date visits are compared
+  const targetDate = String(date).slice(0, 10);
   const [newH, newM] = timeStr.split(":").map(Number);
   const newMinutes = newH * 60 + newM;
   for (const v of allVisitsFlat) {
     if (excludeVisitId && v.id === excludeVisitId) continue;
-    if (v.date !== date) continue;
+    if (!v.date || String(v.date).slice(0, 10) !== targetDate) continue;
     if (!v.appointmentTime) continue;
     const t = v.appointmentTime.slice(0, 5);
     const [h, m] = t.split(":").map(Number);
