@@ -1,0 +1,160 @@
+Please upgrade my Client Log application with the following scheduling improvements.
+
+Appointment Time Support
+
+Currently, appointments only store the appointment date. I want to add a required Appointment Time field to every visit.
+
+Database
+
+Update the visits table by adding a new column:
+
+* appointment_time (TIME, required)
+
+Every visit should now include:
+
+* Visit Date
+* Appointment Time
+* Service
+* Notes
+* Next Appointment Date
+
+⸻
+
+Log a Visit Form
+
+Update the “Log a Visit” form by adding a required Appointment Time field using the native mobile time picker.
+
+Users must not be able to save a visit without selecting a time.
+
+⸻
+
+Appointment Conflict Detection
+
+When a user saves or edits a visit:
+
+1. Load every appointment scheduled on the same date.
+2. Compare the selected appointment time with every existing appointment.
+3. If another appointment exists within 2 hours (before or after), prevent saving.
+4. Show a clear validation error explaining why.
+
+Example:
+
+Existing appointment:
+
+* Sarah — 12:30 PM
+
+Trying to save:
+
+* Ali — 1:30 PM
+
+Result:
+
+Do NOT save.
+
+Display something similar to:
+
+“Time unavailable.
+
+Sarah already has an appointment at 12:30 PM.
+
+Appointments must be at least 2 hours apart.”
+
+If the nearest appointment is 2 hours or more away, allow saving.
+
+Examples:
+
+12:30 → 1:30 ❌ Reject
+
+12:30 → 2:00 ✅ Allow
+
+9:00 → 10:45 ❌ Reject
+
+9:00 → 11:00 ✅ Allow
+
+The comparison should use:
+
+absolute time difference < 2 hours = conflict
+
+absolute time difference >= 2 hours = allowed
+
+⸻
+
+Editing Visits
+
+When editing an existing visit, ignore the current visit during conflict detection so it does not conflict with itself.
+
+⸻
+
+Real-Time Validation
+
+After the user selects a date and time:
+
+* Immediately check for conflicts.
+* Show the warning beneath the time field.
+* Disable the Save button until the conflict is resolved.
+
+The validation should happen before submitting the form.
+
+⸻
+
+Schedule Screen Improvements
+
+Display appointment times in the Schedule page.
+
+Example:
+
+09:00 — Sarah — Hydrafacial
+
+11:00 — Lina — Consultation
+
+13:30 — Maya — Acne Treatment
+
+Appointments must always be sorted by appointment time (earliest first).
+
+⸻
+
+Client Visit History
+
+Each visit inside the client profile should also display the appointment time.
+
+Example:
+
+July 10, 2026
+
+Time: 1:30 PM
+
+Service: Hydrafacial
+
+Next Appointment: August 12, 2026
+
+⸻
+
+Dashboard
+
+Today’s appointments, tomorrow’s appointments, and this week’s appointments should all be sorted by appointment time instead of creation order.
+
+⸻
+
+User Experience
+
+If a selected time conflicts with another appointment, display a clear message such as:
+
+“⚠ Time unavailable.
+
+Sarah already has an appointment at 12:30 PM.
+
+Please choose a time at least 2 hours before or after this appointment.”
+
+⸻
+
+Technical Requirements
+
+* Use Supabase for storing and retrieving appointment times.
+* Store the appointment time separately from the date.
+* Keep all existing functionality working.
+* Do not break authentication or Row Level Security.
+* Keep the application fully mobile responsive.
+* Use efficient conflict detection instead of downloading unnecessary data.
+* Create a reusable scheduling utility (for example, checkAppointmentConflict) so future features like appointment durations, multiple staff members, business hours, recurring appointments, and treatment rooms can be added without major refactoring.
+
+Please make all required database migrations, update the React components, update the Supabase queries, and verify that the application builds successfully with no TypeScript, React, or Vite errors before considering the task complete.
