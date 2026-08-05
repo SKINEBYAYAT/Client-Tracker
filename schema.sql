@@ -14,6 +14,7 @@ create table if not exists visits (
   client_id uuid references clients(id) on delete cascade not null,
   user_id uuid references auth.users not null default auth.uid(),
   visit_date date not null,
+  appointment_time time not null default '09:00',
   services text[] not null default '{}',
   next_date date,
   notes text default '',
@@ -34,3 +35,9 @@ create policy "Users manage their own visits"
   with check (auth.uid() = user_id);
 
 create index if not exists visits_client_id_idx on visits (client_id);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- MIGRATION (run this if you already have the visits table without appointment_time)
+-- ─────────────────────────────────────────────────────────────────────────────
+-- alter table visits
+--   add column if not exists appointment_time time not null default '09:00';

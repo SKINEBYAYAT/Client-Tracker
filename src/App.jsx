@@ -29,6 +29,30 @@ function daysUntil(d) {
   today.setHours(0, 0, 0, 0);
   return Math.round((new Date(d + "T00:00:00") - today) / 86400000);
 }
+function fmtTime(t) {
+  if (!t) return "";
+  const [h, m] = t.slice(0, 5).split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  const hour = h % 12 || 12;
+  return `${hour}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+// Reusable scheduling utility — returns first conflicting visit or null.
+// Extensible: add staff, room, or duration params here in future.
+function checkConflict(allVisitsFlat, date, timeStr, excludeVisitId = null) {
+  if (!date || !timeStr) return null;
+  const [newH, newM] = timeStr.split(":").map(Number);
+  const newMinutes = newH * 60 + newM;
+  for (const v of allVisitsFlat) {
+    if (excludeVisitId && v.id === excludeVisitId) continue;
+    if (v.date !== date) continue;
+    if (!v.appointmentTime) continue;
+    const t = v.appointmentTime.slice(0, 5);
+    const [h, m] = t.split(":").map(Number);
+    const diff = Math.abs(h * 60 + m - newMinutes);
+    if (diff < 120) return { clientName: v.clientName, time: t };
+  }
+  return null;
+}
 function initials(name) {
   const clean = name.replace(/[^\p{L}\p{N}\s]/gu, "").trim();
   const words = clean.split(/\s+/).filter(Boolean);
@@ -154,7 +178,18 @@ function ClientTracker() {
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("clients");
 
-  // Derive flat appointments list from all visits that have a next_date
+  // Flat list of ALL visits (with client name) — used for conflict detection
+  const allVisitsFlat = useMemo(() => {
+    const result = [];
+    clients.forEach((client) => {
+      (visitsByClient[client.id] || []).forEach((visit) => {
+        result.push({ ...visit, clientName: client.name });
+      });
+    });
+    return result;
+  }, [clients, visitsByClient]);
+
+  // Upcoming appointments derived from visits that have a next_date set
   const appointments = useMemo(() => {
     const result = [];
     clients.forEach((client) => {
@@ -166,11 +201,15 @@ function ClientTracker() {
             visitId: visit.id,
             date: visit.nextDate,
             services: visit.services || [],
+            appointmentTime: visit.appointmentTime || "",
           });
         }
       });
     });
-    return result.sort((a, b) => a.date.localeCompare(b.date));
+    return result.sort((a, b) => {
+      const dc = a.date.localeCompare(b.date);
+      return dc !== 0 ? dc : (a.appointmentTime || "").localeCompare(b.appointmentTime || "");
+    });
   }, [clients, visitsByClient]);
 
   const loadAll = useCallback(async () => {
@@ -195,6 +234,7 @@ function ClientTracker() {
       map[v.client_id].push({
         id: v.id,
         date: v.visit_date,
+        appointmentTime: v.appointment_time || "",
         services: v.services || [],
         nextDate: v.next_date,
         notes: v.notes,
@@ -265,6 +305,7 @@ function ClientTracker() {
       .insert({
         client_id: clientId,
         visit_date: visit.date,
+        appointment_time: visit.appointmentTime,
         services: visit.services,
         next_date: visit.nextDate || null,
         notes: visit.notes,
@@ -275,7 +316,7 @@ function ClientTracker() {
       setError("Couldn't save visit: " + error.message);
       return;
     }
-    const newVisit = { id: row.id, date: row.visit_date, services: row.services, nextDate: row.next_date, notes: row.notes };
+    const newVisit = { id: row.id, date: row.visit_date, appointmentTime: row.appointment_time || "", services: row.services, nextDate: row.next_date, notes: row.notes };
     setVisitsByClient((prev) => {
       const updated = [newVisit, ...(prev[clientId] || [])].sort((a, b) => (a.date < b.date ? 1 : -1));
       return { ...prev, [clientId]: updated };
@@ -288,6 +329,7 @@ function ClientTracker() {
       .from("visits")
       .update({
         visit_date: visit.date,
+        appointment_time: visit.appointmentTime,
         services: visit.services,
         next_date: visit.nextDate || null,
         notes: visit.notes,
@@ -299,7 +341,7 @@ function ClientTracker() {
       setError("Couldn't update visit: " + error.message);
       return;
     }
-    const updatedVisit = { id: row.id, date: row.visit_date, services: row.services, nextDate: row.next_date, notes: row.notes };
+    const updatedVisit = { id: row.id, date: row.visit_date, appointmentTime: row.appointment_time || "", services: row.services, nextDate: row.next_date, notes: row.notes };
     setVisitsByClient((prev) => {
       const updated = (prev[clientId] || [])
         .map((v) => (v.id === visitId ? updatedVisit : v))
@@ -384,7 +426,7 @@ function ClientTracker() {
             <EditClientSheet client={selected} onClose={() => setSheet(null)} onSave={(data) => updateClient(selected.id, data)} />
           )}
           {sheet === "newVisit" && selected && (
-            <NewVisitSheet clientName={selected.name} onClose={() => setSheet(null)} onSave={(v) => addVisit(selected.id, v)} />
+            <NewVisitSheet clientName={selected.name} onClose={() => setSheet(null)} onSave={(v) => addVisit(selected.id, v)} allVisitsFlat={allVisitsFlat} />
           )}
           {sheet === "editVisit" && selected && editingVisit && (
             <EditVisitSheet
@@ -395,6 +437,7 @@ function ClientTracker() {
                 setEditingVisit(null);
               }}
               onSave={(v) => updateVisit(selected.id, editingVisit.id, v)}
+              allVisitsFlat={allVisitsFlat}
             />
           )}
         </>
@@ -569,7 +612,12 @@ function VisitTicket({ visit, onEdit, onDelete }) {
   return (
     <div style={{ background: CARD, border: `1px dashed ${LINE}`, borderRadius: 12, padding: "14px 14px", marginBottom: 12, position: "relative" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5, fontWeight: 700, color: INK }}>{fmtDate(visit.date)}</div>
+        <div>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5, fontWeight: 700, color: INK }}>{fmtDate(visit.date)}</div>
+          {visit.appointmentTime && (
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: MUTED, marginTop: 2 }}>{fmtTime(visit.appointmentTime)}</div>
+          )}
+        </div>
         <div style={{ display: "flex", gap: 10 }}>
           <button onClick={onEdit} className="tap" style={{ border: "none", background: "transparent", cursor: "pointer", color: MUTED }}>
             <Pencil size={13} />
@@ -705,21 +753,24 @@ function EditClientSheet({ client, onClose, onSave }) {
   );
 }
 
-function NewVisitSheet({ clientName, onClose, onSave }) {
+function NewVisitSheet({ clientName, onClose, onSave, allVisitsFlat }) {
   const [date, setDate] = useState(todayStr());
+  const [appointmentTime, setAppointmentTime] = useState("");
   const [serviceInput, setServiceInput] = useState("");
   const [services, setServices] = useState([]);
   const [nextDate, setNextDate] = useState("");
   const [notes, setNotes] = useState("");
 
+  const conflict = useMemo(
+    () => checkConflict(allVisitsFlat, date, appointmentTime),
+    [allVisitsFlat, date, appointmentTime]
+  );
+
   const addService = () => {
     const s = serviceInput.trim();
-    if (s) {
-      setServices((prev) => [...prev, s]);
-      setServiceInput("");
-    }
+    if (s) { setServices((prev) => [...prev, s]); setServiceInput(""); }
   };
-  const canSave = date && services.length > 0;
+  const canSave = date && appointmentTime && services.length > 0 && !conflict;
 
   return (
     <Sheet title="Log visit" onClose={onClose}>
@@ -728,6 +779,17 @@ function NewVisitSheet({ clientName, onClose, onSave }) {
         <div>
           <label style={labelStyle}>Date of visit</label>
           <input type="date" style={fieldStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        </div>
+        <div>
+          <label style={labelStyle}>Appointment time <span style={{ color: STAMP }}>*</span></label>
+          <input type="time" style={fieldStyle} value={appointmentTime} onChange={(e) => setAppointmentTime(e.target.value)} />
+          {conflict && (
+            <div style={{ marginTop: 8, padding: "10px 12px", background: STAMP_BG, borderRadius: 10, fontSize: 13, color: STAMP, lineHeight: 1.6 }}>
+              ⚠ Time unavailable.<br />
+              <strong>{conflict.clientName}</strong> already has an appointment at {fmtTime(conflict.time)}.<br />
+              Please choose a time at least 2 hours before or after.
+            </div>
+          )}
         </div>
         <div>
           <label style={labelStyle}>Services performed</label>
@@ -762,10 +824,12 @@ function NewVisitSheet({ clientName, onClose, onSave }) {
           <label style={labelStyle}>Notes · optional</label>
           <textarea style={{ ...fieldStyle, resize: "vertical", minHeight: 56 }} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </div>
-        <PrimaryButton disabled={!canSave} onClick={() => onSave({ date, services, nextDate, notes })}>
+        <PrimaryButton disabled={!canSave} onClick={() => onSave({ date, appointmentTime, services, nextDate, notes })}>
           Save visit
         </PrimaryButton>
-        {!canSave && <div style={{ fontSize: 12, color: STAMP, textAlign: "center" }}>Add a date and at least one service.</div>}
+        {!canSave && !conflict && (
+          <div style={{ fontSize: 12, color: STAMP, textAlign: "center" }}>Add a date, time, and at least one service.</div>
+        )}
       </div>
     </Sheet>
   );
@@ -846,14 +910,19 @@ function ScheduleScreen({ appointments, loaded }) {
     return list;
   }, [appointments, selectedDate, searchQuery, serviceFilter]);
 
-  // Group by date
+  // Group by date, sorted by date then by appointment time within each day
   const grouped = useMemo(() => {
     const map = {};
     filtered.forEach((a) => {
       if (!map[a.date]) map[a.date] = [];
       map[a.date].push(a);
     });
-    return Object.entries(map).sort(([a], [b]) => a.localeCompare(b));
+    return Object.entries(map)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, apts]) => [
+        date,
+        [...apts].sort((a, b) => (a.appointmentTime || "").localeCompare(b.appointmentTime || "")),
+      ]);
   }, [filtered]);
 
   // Dates that have appointments (for calendar dots)
@@ -983,7 +1052,14 @@ function ScheduleScreen({ appointments, loaded }) {
                     {initials(a.clientName)}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14.5, fontWeight: 600, color: INK }}>{a.clientName}</div>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
+                      {a.appointmentTime && (
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 700, color: isOverdue ? STAMP : INK, flexShrink: 0 }}>
+                          {fmtTime(a.appointmentTime)}
+                        </span>
+                      )}
+                      <span style={{ fontSize: 14.5, fontWeight: 600, color: INK }}>{a.clientName}</span>
+                    </div>
                     {a.services.length > 0 && (
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
                         {a.services.map((s, si) => (
@@ -1089,21 +1165,25 @@ function MiniCalendar({ yearMonth, appointmentDateSet, selectedDate, onSelectDat
   );
 }
 
-function EditVisitSheet({ clientName, visit, onClose, onSave }) {
+function EditVisitSheet({ clientName, visit, onClose, onSave, allVisitsFlat }) {
   const [date, setDate] = useState(visit.date || todayStr());
+  const [appointmentTime, setAppointmentTime] = useState(visit.appointmentTime ? visit.appointmentTime.slice(0, 5) : "");
   const [serviceInput, setServiceInput] = useState("");
   const [services, setServices] = useState(visit.services || []);
   const [nextDate, setNextDate] = useState(visit.nextDate || "");
   const [notes, setNotes] = useState(visit.notes || "");
 
+  // Exclude self (visit.id) so it doesn't conflict with its own original slot
+  const conflict = useMemo(
+    () => checkConflict(allVisitsFlat, date, appointmentTime, visit.id),
+    [allVisitsFlat, date, appointmentTime, visit.id]
+  );
+
   const addService = () => {
     const s = serviceInput.trim();
-    if (s) {
-      setServices((prev) => [...prev, s]);
-      setServiceInput("");
-    }
+    if (s) { setServices((prev) => [...prev, s]); setServiceInput(""); }
   };
-  const canSave = date && services.length > 0;
+  const canSave = date && appointmentTime && services.length > 0 && !conflict;
 
   return (
     <Sheet title="Edit visit" onClose={onClose}>
@@ -1112,6 +1192,17 @@ function EditVisitSheet({ clientName, visit, onClose, onSave }) {
         <div>
           <label style={labelStyle}>Date of visit</label>
           <input type="date" style={fieldStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        </div>
+        <div>
+          <label style={labelStyle}>Appointment time <span style={{ color: STAMP }}>*</span></label>
+          <input type="time" style={fieldStyle} value={appointmentTime} onChange={(e) => setAppointmentTime(e.target.value)} />
+          {conflict && (
+            <div style={{ marginTop: 8, padding: "10px 12px", background: STAMP_BG, borderRadius: 10, fontSize: 13, color: STAMP, lineHeight: 1.6 }}>
+              ⚠ Time unavailable.<br />
+              <strong>{conflict.clientName}</strong> already has an appointment at {fmtTime(conflict.time)}.<br />
+              Please choose a time at least 2 hours before or after.
+            </div>
+          )}
         </div>
         <div>
           <label style={labelStyle}>Services performed</label>
@@ -1146,10 +1237,12 @@ function EditVisitSheet({ clientName, visit, onClose, onSave }) {
           <label style={labelStyle}>Notes · optional</label>
           <textarea style={{ ...fieldStyle, resize: "vertical", minHeight: 56 }} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </div>
-        <PrimaryButton disabled={!canSave} onClick={() => onSave({ date, services, nextDate, notes })}>
+        <PrimaryButton disabled={!canSave} onClick={() => onSave({ date, appointmentTime, services, nextDate, notes })}>
           Save changes
         </PrimaryButton>
-        {!canSave && <div style={{ fontSize: 12, color: STAMP, textAlign: "center" }}>Add a date and at least one service.</div>}
+        {!canSave && !conflict && (
+          <div style={{ fontSize: 12, color: STAMP, textAlign: "center" }}>Add a date, time, and at least one service.</div>
+        )}
       </div>
     </Sheet>
   );
